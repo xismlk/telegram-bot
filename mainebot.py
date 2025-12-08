@@ -1,6 +1,8 @@
+
 import json
 from datetime import datetime
-
+import os
+from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
@@ -49,8 +51,13 @@ async def update_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text("First argument must be a number")
 
+
 if __name__ == "__main__":
-    app = ApplicationBuilder().token("8455371476:AAHwh6cxPD6EO1SvZgIMNv5_moUhXK3s-KE").build()
+    load_dotenv()
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    if not token:
+        raise ValueError("TELEGRAM_BOT_TOKEN not set in environment variables.")
+    app = ApplicationBuilder().token(token).build()
     app.add_handler(CommandHandler("day", get_day))
     app.add_handler(CommandHandler("update_day", update_message))
     app.run_polling()
