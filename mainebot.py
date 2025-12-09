@@ -70,27 +70,28 @@ async def set_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Usage: /set_timezone <Region/City>")
         return
 
-    tz_name = context.args[0]
+    tz_name = context.args[0].strip()  # remove extra spaces
+    user_id = update.effective_user.id
+
     try:
-        ZoneInfo(tz_name)  # validate
-        user_id = update.effective_user.id
-        user_timezones[user_id] = tz_name
-        await update.message.reply_text(f"✅ Timezone set to {tz_name}")
-
-        # Schedule midnight job for this user
-        job_queue = context.application.job_queue
-        job_queue.run_daily(
-            send_midnight_message,
-            time=time(0, 0),
-            chat_id=user_id,
-            name=f"midnight_{user_id}",
-            tz=ZoneInfo(tz_name)
-        )
-
-        await update.message.reply_text("Midnight advent message scheduled!")
-
+        tz = ZoneInfo(tz_name)  # validate
     except Exception:
         await update.message.reply_text("❌ Invalid timezone. Example: Asia/Singapore")
+        return  # stop here
+
+    # If valid, save and schedule
+    user_timezones[user_id] = tz_name
+    await update.message.reply_text(f"✅ Timezone set to {tz_name}")
+
+    job_queue = context.application.job_queue
+    job_queue.run_daily(
+        send_midnight_message,
+        time=time(0, 0),
+        chat_id=user_id,
+        name=f"midnight_{user_id}",
+        tz=tz
+    )
+    await update.message.reply_text("Midnight advent message scheduled!")
         
 # --- Job ---
 async def send_midnight_message(context: ContextTypes.DEFAULT_TYPE):
