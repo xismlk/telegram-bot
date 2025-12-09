@@ -83,15 +83,7 @@ async def set_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_timezones[user_id] = tz_name
     await update.message.reply_text(f"✅ Timezone set to {tz_name}")
 
-    job_queue = context.application.job_queue
-    job_queue.run_daily(
-        send_midnight_message,
-        time=time(0, 0),
-        chat_id=user_id,
-        name=f"midnight_{user_id}",
-        tz=tz
-    )
-    await update.message.reply_text("Midnight advent message scheduled!")
+    
         
 # --- Job ---
 async def send_midnight_message(context: ContextTypes.DEFAULT_TYPE):
