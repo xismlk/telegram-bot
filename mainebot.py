@@ -66,7 +66,6 @@ async def update_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("First argument must be a number")
 
 async def set_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Allow user to set their timezone, e.g. /set_timezone Asia/Singapore"""
     if not context.args:
         await update.message.reply_text("Usage: /set_timezone <Region/City>")
         return
@@ -82,15 +81,14 @@ async def set_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         job_queue = context.application.job_queue
         job_queue.run_daily(
             send_midnight_message,
-            time=time(0, 0),  # midnight
+            time=time(0, 0),
             chat_id=user_id,
             name=f"midnight_{user_id}",
             tz=ZoneInfo(tz_name)
         )
         await update.message.reply_text("Midnight advent message scheduled!")
     except Exception:
-        await update.message.reply_text("Invalid timezone. Example: Asia/Singapore")
-
+        await update.message.reply_text("❌ Invalid timezone. Example: Asia/Singapore")
 # --- Job ---
 async def send_midnight_message(context: ContextTypes.DEFAULT_TYPE):
     """Send advent message at midnight in user's timezone"""
