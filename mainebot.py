@@ -86,9 +86,7 @@ async def set_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE):
             name=f"midnight_{user_id}",
             tz=ZoneInfo(tz_name)
         )
-        await update.message.reply_text("Midnight advent message scheduled!")
-    except Exception:
-        await update.message.reply_text("❌ Invalid timezone. Example: Asia/Singapore")
+        
 # --- Job ---
 async def send_midnight_message(context: ContextTypes.DEFAULT_TYPE):
     """Send advent message at midnight in user's timezone"""
