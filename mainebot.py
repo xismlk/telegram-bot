@@ -1,17 +1,24 @@
+
 import json
 import os
-from datetime import datetime, time
+import random
+from datetime import datetime
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 
+# --- Config ---
 ADVENT_FILE = "advent_messages.json"
 ADMIN_ID = 435439281
 USER_ID = 649982388
 AUTHORISED_IDS = {ADMIN_ID, USER_ID}
 
-# Store advent messages
+# Set to True if you want the love & compliment easter eggs to reply to anyone
+# Set to False to reply only to AUTHORISED_IDS
+REPLY_TO_ANYONE = False
+
+# --- Storage: Advent messages ---
 def load_messages():
     try:
         with open(ADVENT_FILE, "r") as f:
@@ -25,14 +32,14 @@ def save_messages(messages):
 
 advent_messages = load_messages()
 
-# Store user timezones
+# --- Storage: User timezones ---
 user_timezones = {}  # {user_id: "Asia/Singapore"}
 
 # --- Commands ---
 async def get_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in AUTHORISED_IDS:
-        await update.message.reply_text("You are not authorized to use this command.")
+        await update.effective_message.reply_text("You are not authorized to use this command.")
         return
 
     tz_name = user_timezones.get(user_id, "UTC")
@@ -40,63 +47,98 @@ async def get_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
     day = now.day
 
     if str(day) in advent_messages:
-        await update.message.reply_text(f"Day {day}: {advent_messages[str(day)]}")
+        await update.effective_message.reply_text(f"Day {day}: {advent_messages[str(day)]}")
     else:
-        await update.message.reply_text(f"No message set for day {day}")
+        await update.effective_message.reply_text(f"No message set for day {day}")
 
 async def update_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text("You are not authorized to use this command.")
+        await update.effective_message.reply_text("You are not authorized to use this command.")
         return
 
     if len(context.args) < 2:
-        await update.message.reply_text("Usage: /update_day <day> <message>")
+        await update.effective_message.reply_text("Usage: /update_day <day> <message>")
         return
 
     try:
         day = int(context.args[0])
         if day < 1 or day > 25:
-            await update.message.reply_text("Day must be between 1 and 25")
+            await update.effective_message.reply_text("Day must be between 1 and 25")
             return
         message = " ".join(context.args[1:])
         advent_messages[str(day)] = message
         save_messages(advent_messages)
-        await update.message.reply_text(f"✅ Day {day} updated!")
+        await update.effective_message.reply_text(f"✅ Day {day} updated!")
     except ValueError:
-        await update.message.reply_text("First argument must be a number")
+        await update.effective_message.reply_text("First argument must be a number")
 
 async def set_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Usage: /set_timezone <Region/City>")
+        await update.effective_message.reply_text("Usage: /set_timezone <Region/City>")
         return
 
-    tz_name = context.args[0].strip()  # remove extra spaces
+    tz_name = context.args[0].strip()
     user_id = update.effective_user.id
 
     try:
-        tz = ZoneInfo(tz_name)  # validate
+        _ = ZoneInfo(tz_name)  # validate timezone
     except Exception:
-        await update.message.reply_text("❌ Invalid timezone. Example: Asia/Singapore")
-        return  # stop here
+        await update.effective_message.reply_text("❌ Invalid timezone. Example: Asia/Singapore")
+        return
 
-    # If valid, save and schedule
     user_timezones[user_id] = tz_name
-    await update.message.reply_text(f"✅ Timezone set to {tz_name}")
+    await update.effective_message.reply_text(f"✅ Timezone set to {tz_name}")
 
-    
-        
-# --- Job ---
-async def send_midnight_message(context: ContextTypes.DEFAULT_TYPE):
-    """Send advent message at midnight in user's timezone"""
-    user_id = context.job.chat_id
-    tz_name = user_timezones.get(user_id, "UTC")
-    now = datetime.now(ZoneInfo(tz_name))
-    day = now.day
+async def surprise(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send a random Advent message from the stored list (authorized users only)."""
+    user_id = update.effective_user.id
+    if user_id not in AUTHORISED_IDS:
+        await update.effective_message.reply_text("You are not authorized to use this command.")
+        return
 
-    if str(day) in advent_messages:
-        await context.bot.send_message(user_id, f"🎄 Day {day}: {advent_messages[str(day)]}")
-    else:
-        await context.bot.send_message(user_id, f"No message set for day {day}")
+    if not advent_messages:
+        await update.effective_message.reply_text("No advent messages set yet. Use /update_day to add one.")
+        return
+
+    # Pick a random existing day key
+    day_key = random.choice(list(advent_messages.keys()))
+    msg = advent_messages[day_key]
+    await update.effective_message.reply_text(f"🎁 Surprise Advent Message: Day {day_key}\n{msg}")
+
+# --- Easter eggs / auto-replies ---
+async def love_and_easter_eggs_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Auto-reply to fun triggers in plain text messages (non-commands)."""
+    msg = update.effective_message
+    user_id = update.effective_user.id
+
+    # Respect the toggle: restrict replies to authorised IDs if REPLY_TO_ANYONE is False
+    if not REPLY_TO_ANYONE and user_id not in AUTHORISED_IDS:
+        return
+
+    text = (msg.text or msg.caption or "").strip().lower()
+
+    # Love reply
+    if "i love you" in text:
+        await msg.reply_text("i love you more 🧸❤️")
+        return
+
+    # Compliment Easter egg
+    if text == "compliment me":
+        compliments = [
+            "you're amazing bae! 🌟",
+            "you're the prettiest ever baby! ✨",
+            "you got this my love you're doing so well!😘 ",
+            "you make my world ❤️🌎",
+            "you're the greatest girlfriend, wife and partner ever my love💫",
+            "your smile is so cute and adorable🥰",
+            "you're the hottest sexiest girl ever baby😋",
+        ]
+        await msg.reply_text(random.choice(compliments))
+        return
+
+    # (Removed) hidden 'surprise' text triggers:
+    # if text in {"surprise me", "gimme surprise", "random advent"}:
+    #     ...
 
 # --- Main ---
 if __name__ == "__main__":
@@ -107,8 +149,13 @@ if __name__ == "__main__":
 
     app = ApplicationBuilder().token(token).build()
 
+    # Command handlers
     app.add_handler(CommandHandler("day", get_day))
     app.add_handler(CommandHandler("update_day", update_message))
     app.add_handler(CommandHandler("set_timezone", set_timezone))
+    app.add_handler(CommandHandler("surprise", surprise))
+
+    # Message handler for love & easter eggs (non-command text)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, love_and_easter_eggs_handler))
 
     app.run_polling()
