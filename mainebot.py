@@ -119,17 +119,17 @@ async def love_and_easter_eggs_handler(update: Update, context: ContextTypes.DEF
 
     # Love reply
     if "i love you" in text:
-        await msg.reply_text("i love you more 🧸❤️")
+        await msg.reply_text("i love you the most 🧸❤️")
         return
 
     # Compliment Easter egg
     if text == "compliment me":
         compliments = [
-            "you're amazing bae! 🌟",
-            "you're the prettiest ever baby! ✨",
+            "you're amazing bae!🏆 ",
+            "you're the prettiest ever baby!😍 ",
             "you got this my love you're doing so well!😘 ",
             "you make my world ❤️🌎",
-            "you're the greatest girlfriend, wife and partner ever my love💫",
+            "you're the greatest girlfriend, wife and partner ever in the whole universe my love💫",
             "your smile is so cute and adorable🥰",
             "you're the hottest sexiest girl ever baby😋",
         ]
