@@ -63,18 +63,18 @@ async def get_daily_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         days_left = (end_date - today_date).days
 
         if days_left > 0:
-            countdown_text = f"⏳ **{days_left} days remaining until I see you!** ✈️\n"
+            countdown_text = f"⏳ **{days_left} days remaining until I see you!** 😍\n"
         elif days_left == 0:
             countdown_text = f"🎉 **IT'S TODAY! YAY! It's is finally over!** 🎉\n"
         else:
             countdown_text = f"💕 **No more LDR! It's been {-days_left} days since we reunited!**\n"
 
     # Build Header
-    header = f"{countdown_text}📅 Today is: {formatted_date}\n\n"
+    header = f"{countdown_text} Today is: {formatted_date}\n\n"
 
     # Fetch Message
     if today_str in daily_messages:
-        await update.effective_message.reply_text(f"{header}❤️ {daily_messages[today_str]}", parse_mode='Markdown')
+        await update.effective_message.reply_text(f"{header} 🧸 {daily_messages[today_str]}", parse_mode='Markdown')
     else:
         await update.effective_message.reply_text(f"{header}No message set for today yet. 🥰", parse_mode='Markdown')
 
