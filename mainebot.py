@@ -1,11 +1,12 @@
 import json
 import os
 import random
+import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, CallbackQueryHandler, filters
 
 # --- Config ---
 MESSAGES_FILE = "daily_messages.json"
@@ -32,14 +33,17 @@ def save_json(filename, data):
 daily_messages = load_json(MESSAGES_FILE)
 settings = load_json(SETTINGS_FILE)
 
-# Ensure 'timezones' dictionary exists in settings
+# Ensure required tracking keys exist in settings
 if "timezones" not in settings:
     settings["timezones"] = {}
+
+if "decide_history" not in settings:
+    settings["decide_history"] = []
 
 # Convert string keys back to int for runtime use
 user_timezones = {int(k): v for k, v in settings["timezones"].items()}
 
-# --- Commands ---
+# --- Original Commands ---
 async def get_daily_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Gets the message for the current date, with a countdown."""
     user_id = update.effective_user.id
@@ -47,13 +51,11 @@ async def get_daily_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("You are not authorized! ❌")
         return
 
-    # Get today's date in user's timezone
     tz_name = user_timezones.get(user_id, "UTC")
     now = datetime.now(ZoneInfo(tz_name))
-    today_str = now.strftime("%Y-%m-%d") # Format: 2023-10-24
-    formatted_date = now.strftime("%B %d, %Y") # Format: October 24, 2023
+    today_str = now.strftime("%Y-%m-%d") 
+    formatted_date = now.strftime("%B %d, %Y") 
 
-    # Calculate Countdown
     countdown_text = ""
     end_date_str = settings.get("ldr_end_date")
     
@@ -65,14 +67,12 @@ async def get_daily_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if days_left > 0:
             countdown_text = f"⏳ **{days_left} days remaining until I see you!** 🧸\n"
         elif days_left == 0:
-            countdown_text = f"🎉 **IT'S TODAY! YAY! It's is finally over!** 🎉\n"
+            countdown_text = f"🎉 **IT'S TODAY! YAY! It's finally over!** 🎉\n"
         else:
             countdown_text = f"💕 **No more LDR! It's been {-days_left} days since we reunited!**\n"
 
-    # Build Header
     header = f"{countdown_text} Today is: {formatted_date}\n\n"
 
-    # Fetch Message
     if today_str in daily_messages:
         await update.effective_message.reply_text(f"{header} 💌 {daily_messages[today_str]}", parse_mode='Markdown')
     else:
@@ -88,9 +88,7 @@ async def update_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("Usage: /set_msg <message> OR /set_msg YYYY-MM-DD <message>")
         return
 
-    # Check if the first word is a date (YYYY-MM-DD)
     try:
-        # Test if it parses as a date
         datetime.strptime(context.args[0], "%Y-%m-%d")
         date_str = context.args[0]
         message = " ".join(context.args[1:])
@@ -98,7 +96,6 @@ async def update_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.effective_message.reply_text("You forgot to include the message!")
             return
     except ValueError:
-        # If it's not a date, assume the whole text is for TODAY
         tz_name = user_timezones.get(update.effective_user.id, "UTC")
         now = datetime.now(ZoneInfo(tz_name))
         date_str = now.strftime("%Y-%m-%d")
@@ -117,7 +114,7 @@ async def set_end_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     date_str = context.args[0]
     try:
-        datetime.strptime(date_str, "%Y-%m-%d") # Validate format
+        datetime.strptime(date_str, "%Y-%m-%d") 
         settings["ldr_end_date"] = date_str
         save_json(SETTINGS_FILE, settings)
         await update.effective_message.reply_text(f"✅ LDR End Date officially set to: {date_str}! The countdown begins.")
@@ -135,11 +132,8 @@ async def set_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         ZoneInfo(tz_name)
         user_timezones[user_id] = tz_name
-        
-        # Save nested settings
         settings["timezones"][str(user_id)] = tz_name
         save_json(SETTINGS_FILE, settings)
-        
         await update.effective_message.reply_text(f"✅ Your timezone is now: {tz_name}")
     except Exception:
         await update.effective_message.reply_text("❌ Invalid timezone. Use 'Asia/Seoul'.")
@@ -154,13 +148,113 @@ async def surprise(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     date_key, msg = random.choice(list(daily_messages.items()))
     
-    # Try to make the date look pretty
     try:
         pretty_date = datetime.strptime(date_key, "%Y-%m-%d").strftime("%B %d, %Y")
     except:
         pretty_date = date_key
 
     await update.effective_message.reply_text(f"🎁 Random Memory from {pretty_date}:\n\n{msg}")
+
+# --- New Arbitrator Features ---
+
+async def decide(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Generates two interactive card buttons to settle a split choice."""
+    user_id = update.effective_user.id
+    if user_id not in AUTHORISED_IDS: return
+
+    user_input = " ".join(context.args)
+    match = re.search(r'(?:"([^"]+)"|(.+?))\s+vs\s+(?:"([^"]+)"|(.+))', user_input, re.IGNORECASE)
+    
+    if not match:
+        await update.effective_message.reply_text('Format it like this:\n/decide "Sushi" vs "Burgers"\nor simply:\n/decide Sushi vs Burgers')
+        return
+
+    groups = match.groups()
+    opt1 = (groups[0] or groups[1]).strip()
+    opt2 = (groups[2] or groups[3]).strip()
+
+    msg = await update.effective_message.reply_text("The choice is locked in. Flip a card to reveal the winner...")
+    
+    # Store the options in memory using the message_id as a unique tag
+    context.bot_data[f"decide_{msg.message_id}"] = [opt1, opt2]
+
+    keyboard = [
+        [
+            InlineKeyboardButton("🃏 Card 1", callback_data=f"flip_1_{msg.message_id}"),
+            InlineKeyboardButton("🃏 Card 2", callback_data=f"flip_2_{msg.message_id}")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await msg.edit_reply_markup(reply_markup)
+
+async def card_flip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the card selection button press, logs the result, and displays the outcome."""
+    query = update.callback_query
+    await query.answer()
+
+    data_parts = query.data.split("_")
+    chosen_card = data_parts[1]
+    msg_id = data_parts[2]
+    game_key = f"decide_{msg_id}"
+    
+    if game_key in context.bot_data:
+        opt1, opt2 = context.bot_data[game_key]
+        winner = random.choice([opt1, opt2])
+        flipper = query.from_user.first_name
+        
+        # Log into the JSON system data structure
+        history_entry = {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "user": flipper,
+            "opt1": opt1,
+            "opt2": opt2,
+            "winner": winner
+        }
+        settings["decide_history"].append(history_entry)
+        save_json(SETTINGS_FILE, settings)
+        
+        # Update UI instantly
+        new_text = f"🃏 **Card {chosen_card}** was flipped by {flipper}!\n\n🏆 **Winner:** {winner}"
+        await query.edit_message_text(text=new_text, parse_mode="Markdown")
+        
+        del context.bot_data[game_key]
+    else:
+        await query.edit_message_text(text="Session expired or already flipped!")
+
+async def get_tally(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Compiles and prints total historical usage analytics for the arbitrator."""
+    user_id = update.effective_user.id
+    if user_id not in AUTHORISED_IDS: return
+
+    history = settings.get("decide_history", [])
+    total = len(history)
+
+    if total == 0:
+        await update.effective_message.reply_text("No decisions have been made yet! 🃏")
+        return
+
+    # Count how many flips each person initiated
+    user_flips = {}
+    for entry in history:
+        user_name = entry.get("user", "Unknown")
+        user_flips[user_name] = user_flips.get(user_name, 0) + 1
+
+    # Format the data display clean and compact
+    lines = [
+        "📊 **The Arbitrator Lifetime Dashboard** 📊\n",
+        f"🔢 **Total Decisions Resolved:** {total}\n",
+        "👤 **Card Flips Initiated:**"
+    ]
+    
+    for name, count in user_flips.items():
+        lines.append(f" └ {name}: {count} flips")
+
+    # Display the last 3 results for added relationship history flavor
+    lines.append("\n🕒 **Most Recent Choices:**")
+    for entry in history[-3:]:
+        lines.append(f" • {entry['opt1']} vs {entry['opt2']} → 🎉 **{entry['winner']}**")
+
+    await update.effective_message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 # --- Easter Eggs ---
 async def egg_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -177,9 +271,9 @@ async def egg_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "you're amazing bae!🏆",
             "you're the prettiest ever baby!😍",
             "you make my world ❤️🌎",
-            "you're the hottest girl ever baby😋"
-            "i'm so proud of you my love😘"
-            "you're my everything🌎"
+            "you're the hottest girl ever baby😋",
+            "i'm so proud of you my love😘",
+            "you're my everything🌎",
             "you make the happiest ever🥰"
         ]
         await msg.reply_text(random.choice(compliments))
@@ -191,11 +285,19 @@ if __name__ == "__main__":
     
     app = ApplicationBuilder().token(token).build()
 
+    # Base Handlers
     app.add_handler(CommandHandler("daily", get_daily_message))
     app.add_handler(CommandHandler("set_msg", update_message))
     app.add_handler(CommandHandler("set_end", set_end_date))
     app.add_handler(CommandHandler("set_tz", set_timezone))
     app.add_handler(CommandHandler("surprise", surprise))
+    
+    # Arbitrator Handlers
+    app.add_handler(CommandHandler("decide", decide))
+    app.add_handler(CommandHandler("tally", get_tally))
+    app.add_handler(CallbackQueryHandler(card_flip_callback, pattern=r"^flip_"))
+    
+    # Free Text Handler
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, egg_handler))
 
     print("LDR Bot is running...")
