@@ -180,8 +180,8 @@ async def decide(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = [
         [
-            InlineKeyboardButton("🃏 Card 1", callback_data=f"flip_1_{msg.message_id}"),
-            InlineKeyboardButton("🃏 Card 2", callback_data=f"flip_2_{msg.message_id}")
+            InlineKeyboardButton("🃏 1", callback_data=f"flip_1_{msg.message_id}"),
+            InlineKeyboardButton("🃏 2", callback_data=f"flip_2_{msg.message_id}")
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -241,8 +241,8 @@ async def get_tally(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Format the data display clean and compact
     lines = [
-        "📊 **The Arbitrator Lifetime Dashboard** 📊\n",
-        f"🔢 **Total Decisions Resolved:** {total}\n",
+        "📊 **Maine's Decisions** 📊\n",
+        f"🔢 **Total Decisions Made:** {total}\n",
         "👤 **Card Flips Initiated:**"
     ]
     
@@ -275,6 +275,8 @@ async def egg_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "i'm so proud of you my love😘",
             "you're my everything🌎",
             "you make the happiest ever🥰"
+            "you're doing so well baby🏆"
+            "i'm proud of you forever🥰"
         ]
         await msg.reply_text(random.choice(compliments))
 
