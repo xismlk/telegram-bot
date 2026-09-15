@@ -163,27 +163,54 @@ async def surprise(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Date Night Ideas Feature ---
 
-async def add_date_idea(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Adds a new date idea to the list."""
-    user_id = update.effective_user.id
-    if user_id not in AUTHORISED_IDS: return
+def get_idea_emoji(idea_text: str) -> str:
+    """Scans the date idea text for keywords and returns a matching emoji."""
+    text = idea_text.lower()
 
-    idea_text = " ".join(context.args).strip()
-    if not idea_text:
-        await update.effective_message.reply_text("Usage: /add_date <your date idea>\nExample: /add_date Watch a movie via Teleparty")
+    emoji_rules = {
+        ("brunch", "breakfast", "coffee", "cafe", "tea"): "☕",
+        ("lunch", "dinner", "food", "eat", "supper", "restaurant"): "🍳",
+        ("movie", "cinema", "film", "netflix", "disney", "watch"): "🎬",
+        ("shopping", "shop"): "🛍️",
+        ("bbt", "chagee", "chicha", "tarik", "drink"): "🧋",
+        ("dessert", "cake","ice cream", "cookie", "brownie"): "🍰"
+    }
+
+    for keywords, emoji in emoji_rules.items():
+        if any(word in text for word in keywords):
+            return emoji
+
+    return "🦖"  # Default fallback emoji
+
+async def add_date_idea(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Adds a new date idea to the list with automatic keyword-based emojis."""
+    user_id = update.effective_user.id
+    if user_id not in AUTHORISED_IDS:
         return
+
+    raw_idea = " ".join(context.args).strip()
+    if not raw_idea:
+        await update.effective_message.reply_text(
+            "Usage: /add_date <your date idea>\nExample: /add_date brunch at sip sip"
+        )
+        return
+
+    emoji = get_idea_emoji(raw_idea)
+    formatted_idea = f"{emoji} {raw_idea}"
 
     added_by = update.effective_user.first_name
     entry = {
-        "idea": idea_text,
+        "idea": formatted_idea,
         "added_by": added_by,
-        "date_added": datetime.now().strftime("%Y-%m-%d")
+        "date_added": datetime.now().strftime("%Y-%m-%d"),
     }
 
     settings["date_ideas"].append(entry)
     save_json(SETTINGS_FILE, settings)
 
-    await update.effective_message.reply_text(f"💡 Added to Date Night Ideas:\n✨ \"{idea_text}\" (by {added_by})")
+    await update.effective_message.reply_text(
+        f"💡 Added to Date Night Ideas:\n{formatted_idea} (by {added_by})"
+    )
 
 async def list_date_ideas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Displays all active date night ideas."""
@@ -197,11 +224,13 @@ async def list_date_ideas(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lines = ["🕯️ **Shared Date Night Ideas** 🕯️\n"]
     for idx, item in enumerate(ideas, 1):
-        lines.append(f"{idx}. **{item['idea']}** *(added by {item.get('added_by', 'Someone')})*")
+        added_by = item.get('added_by', 'Someone')
+        lines.append(f"{idx}. {item['idea']} — added by {added_by}")
 
     lines.append("\n🎲 Use /random_date to pick one at random!")
     lines.append("🎉 Use /done_date <number> to mark an idea as completed.")
     lines.append("🏆 Use /past_dates to view your completed memories archive.")
+    
     await update.effective_message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 async def random_date_idea(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -215,7 +244,7 @@ async def random_date_idea(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     chosen = random.choice(ideas)
-    msg = f"🎟️ **Random Date Pick:**\n\n✨ **{chosen['idea']}**\n*(Added by {chosen.get('added_by', 'Someone')})*"
+    msg = f"🎟️ **Random Date Pick:**\n\n✨ {chosen['idea']}\n*(Added by {chosen.get('added_by', 'Someone')})*"
     await update.effective_message.reply_text(msg, parse_mode="Markdown")
 
 async def complete_date_idea(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -243,7 +272,7 @@ async def complete_date_idea(update: Update, context: ContextTypes.DEFAULT_TYPE)
         save_json(SETTINGS_FILE, settings)
 
         await update.effective_message.reply_text(
-            f"🎉 Marked as completed: \"**{completed_item['idea']}**\"!\nSaved to your memories history. 💕",
+            f"🎉 Marked as completed: \"{completed_item['idea']}\"!\nSaved to your memories history. 💕",
             parse_mode="Markdown"
         )
     else:
@@ -261,10 +290,9 @@ async def list_completed_dates(update: Update, context: ContextTypes.DEFAULT_TYP
 
     lines = ["🏆 **Completed Dates Archive** 🏆\n"]
     for idx, item in enumerate(archive, 1):
-        lines.append(
-            f"{idx}. **{item['idea']}**\n"
-            f"   └ Done on {item.get('completed_date', 'N/A')} (completed by {item.get('completed_by', 'Someone')})"
-        )
+        completed_date = item.get('completed_date', 'N/A')
+        completed_by = item.get('completed_by', 'Someone')
+        lines.append(f"{idx}. {item['idea']}\n   └ Done on {completed_date} by {completed_by}")
 
     await update.effective_message.reply_text("\n".join(lines), parse_mode="Markdown")
 
@@ -383,6 +411,7 @@ async def egg_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "you're my everything🌎",
             "you make the happiest ever🥰",
             "you're doing so well baby🏆",
+            "i can't wait to touch you😋",
             "i'm proud of you forever🥰"
         ]
         await msg.reply_text(random.choice(compliments))
