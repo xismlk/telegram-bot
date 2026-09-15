@@ -222,17 +222,19 @@ async def list_date_ideas(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("No date ideas saved yet! Use /add_date to add one. 🕯️")
         return
 
-    lines = ["🕯️ **Shared Date Night Ideas** 🕯️\n"]
+    lines = ["🕯️ *Shared Date Night Ideas* 🕯️\n"]
     for idx, item in enumerate(ideas, 1):
         added_by = item.get('added_by', 'Someone')
-        lines.append(f"{idx}. {item['idea']} — added by {added_by}")
+        # Clean text formatting to prevent Markdown parser crashes
+        lines.append(f"{idx}. {item['idea']} (added by {added_by})")
 
     lines.append("\n🎲 Use /random_date to pick one at random!")
     lines.append("🎉 Use /done_date <number> to mark an idea as completed.")
     lines.append("🏆 Use /past_dates to view your completed memories archive.")
     
-    await update.effective_message.reply_text("\n".join(lines), parse_mode="Markdown")
-
+    # Send without parse_mode to guarantee delivery regardless of special characters in user entries
+    await update.effective_message.reply_text("\n".join(lines))
+    
 async def random_date_idea(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Picks a random date idea from the list."""
     user_id = update.effective_user.id
