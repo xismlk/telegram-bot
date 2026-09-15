@@ -467,7 +467,7 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("random_date", random_date_idea))
     app.add_handler(CommandHandler("done_date", complete_date_idea))
     app.add_handler(CommandHandler("past_dates", list_completed_dates))
-    app.add_handler(CommandHandler("del_date", delete_date))
+    app.add_handler(CommandHandler("del_date", delete_date_idea))
 
     # Arbitrator Handlers
     app.add_handler(CommandHandler("decide", decide))
