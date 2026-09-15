@@ -222,17 +222,16 @@ async def list_date_ideas(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("No date ideas saved yet! Use /add_date to add one. 🕯️")
         return
 
-    lines = ["🕯️ *Shared Date Night Ideas* 🕯️\n"]
+    lines = ["🕯️ Shared Date Night Ideas 🕯️\n"]
     for idx, item in enumerate(ideas, 1):
         added_by = item.get('added_by', 'Someone')
-        # Clean text formatting to prevent Markdown parser crashes
-        lines.append(f"{idx}. {item['idea']} (added by {added_by})")
+        lines.append(f"{idx}. {item['idea']} — added by {added_by}")
 
     lines.append("\n🎲 Use /random_date to pick one at random!")
     lines.append("🎉 Use /done_date <number> to mark an idea as completed.")
+    lines.append("🗑️ Use /del_date <number> to delete a typo/mistake.")
     lines.append("🏆 Use /past_dates to view your completed memories archive.")
     
-    # Send without parse_mode to guarantee delivery regardless of special characters in user entries
     await update.effective_message.reply_text("\n".join(lines))
     
 async def random_date_idea(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -279,6 +278,36 @@ async def complete_date_idea(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
     else:
         await update.effective_message.reply_text(f"❌ Invalid number. Pick a number between 1 and {len(ideas)}.")
+
+async def delete_date_idea(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Deletes a date idea permanently (for typos or mistakes)."""
+    user_id = update.effective_user.id
+    if user_id not in AUTHORISED_IDS:
+        return
+
+    ideas = settings.get("date_ideas", [])
+    if not ideas:
+        await update.effective_message.reply_text("The date ideas list is already empty! 🕯️")
+        return
+
+    if not context.args or not context.args[0].isdigit():
+        await update.effective_message.reply_text(
+            "Usage: /del_date <number>\nExample: /del_date 2"
+        )
+        return
+
+    index = int(context.args[0]) - 1
+
+    if 0 <= index < len(ideas):
+        deleted_item = ideas.pop(index)
+        save_json(SETTINGS_FILE, settings)
+        await update.effective_message.reply_text(
+            f"🗑️ Permanently removed: \"{deleted_item['idea']}\""
+        )
+    else:
+        await update.effective_message.reply_text(
+            f"❌ Invalid number. Pick a number between 1 and {len(ideas)}."
+        )
 
 async def list_completed_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Displays all archived/completed date ideas."""
