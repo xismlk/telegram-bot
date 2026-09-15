@@ -40,6 +40,12 @@ if "timezones" not in settings:
 if "decide_history" not in settings:
     settings["decide_history"] = []
 
+if "date_ideas" not in settings:
+    settings["date_ideas"] = []
+
+if "completed_dates" not in settings:
+    settings["completed_dates"] = []
+
 # Convert string keys back to int for runtime use
 user_timezones = {int(k): v for k, v in settings["timezones"].items()}
 
@@ -155,7 +161,114 @@ async def surprise(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.effective_message.reply_text(f"🎁 Random Memory from {pretty_date}:\n\n{msg}")
 
-# --- New Arbitrator Features ---
+# --- Date Night Ideas Feature ---
+
+async def add_date_idea(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Adds a new date idea to the list."""
+    user_id = update.effective_user.id
+    if user_id not in AUTHORISED_IDS: return
+
+    idea_text = " ".join(context.args).strip()
+    if not idea_text:
+        await update.effective_message.reply_text("Usage: /add_date <your date idea>\nExample: /add_date Watch a movie via Teleparty")
+        return
+
+    added_by = update.effective_user.first_name
+    entry = {
+        "idea": idea_text,
+        "added_by": added_by,
+        "date_added": datetime.now().strftime("%Y-%m-%d")
+    }
+
+    settings["date_ideas"].append(entry)
+    save_json(SETTINGS_FILE, settings)
+
+    await update.effective_message.reply_text(f"💡 Added to Date Night Ideas:\n✨ \"{idea_text}\" (by {added_by})")
+
+async def list_date_ideas(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Displays all active date night ideas."""
+    user_id = update.effective_user.id
+    if user_id not in AUTHORISED_IDS: return
+
+    ideas = settings.get("date_ideas", [])
+    if not ideas:
+        await update.effective_message.reply_text("No date ideas saved yet! Use /add_date to add one. 🕯️")
+        return
+
+    lines = ["🕯️ **Shared Date Night Ideas** 🕯️\n"]
+    for idx, item in enumerate(ideas, 1):
+        lines.append(f"{idx}. **{item['idea']}** *(added by {item.get('added_by', 'Someone')})*")
+
+    lines.append("\n🎲 Use /random_date to pick one at random!")
+    lines.append("🎉 Use /done_date <number> to mark an idea as completed.")
+    lines.append("🏆 Use /past_dates to view your completed memories archive.")
+    await update.effective_message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+async def random_date_idea(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Picks a random date idea from the list."""
+    user_id = update.effective_user.id
+    if user_id not in AUTHORISED_IDS: return
+
+    ideas = settings.get("date_ideas", [])
+    if not ideas:
+        await update.effective_message.reply_text("No date ideas saved yet! Add some with /add_date 🎟️")
+        return
+
+    chosen = random.choice(ideas)
+    msg = f"🎟️ **Random Date Pick:**\n\n✨ **{chosen['idea']}**\n*(Added by {chosen.get('added_by', 'Someone')})*"
+    await update.effective_message.reply_text(msg, parse_mode="Markdown")
+
+async def complete_date_idea(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Moves a date idea from the active list into the completed archive."""
+    user_id = update.effective_user.id
+    if user_id not in AUTHORISED_IDS: return
+
+    ideas = settings.get("date_ideas", [])
+    if not ideas:
+        await update.effective_message.reply_text("The date ideas list is empty! 🕯️")
+        return
+
+    if not context.args or not context.args[0].isdigit():
+        await update.effective_message.reply_text("Usage: /done_date <number>\nExample: /done_date 2")
+        return
+
+    index = int(context.args[0]) - 1
+
+    if 0 <= index < len(ideas):
+        completed_item = ideas.pop(index)
+        completed_item["completed_by"] = update.effective_user.first_name
+        completed_item["completed_date"] = datetime.now().strftime("%Y-%m-%d")
+
+        settings["completed_dates"].append(completed_item)
+        save_json(SETTINGS_FILE, settings)
+
+        await update.effective_message.reply_text(
+            f"🎉 Marked as completed: \"**{completed_item['idea']}**\"!\nSaved to your memories history. 💕",
+            parse_mode="Markdown"
+        )
+    else:
+        await update.effective_message.reply_text(f"❌ Invalid number. Pick a number between 1 and {len(ideas)}.")
+
+async def list_completed_dates(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Displays all archived/completed date ideas."""
+    user_id = update.effective_user.id
+    if user_id not in AUTHORISED_IDS: return
+
+    archive = settings.get("completed_dates", [])
+    if not archive:
+        await update.effective_message.reply_text("No completed dates in your archive yet! Keep going! 💖")
+        return
+
+    lines = ["🏆 **Completed Dates Archive** 🏆\n"]
+    for idx, item in enumerate(archive, 1):
+        lines.append(
+            f"{idx}. **{item['idea']}**\n"
+            f"   └ Done on {item.get('completed_date', 'N/A')} (completed by {item.get('completed_by', 'Someone')})"
+        )
+
+    await update.effective_message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+# --- Arbitrator Features ---
 
 async def decide(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Generates two interactive card buttons to settle a split choice."""
@@ -175,7 +288,6 @@ async def decide(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = await update.effective_message.reply_text("The choice is locked in. Flip a card to reveal the winner...")
     
-    # Store the options in memory using the message_id as a unique tag
     context.bot_data[f"decide_{msg.message_id}"] = [opt1, opt2]
 
     keyboard = [
@@ -202,7 +314,6 @@ async def card_flip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         winner = random.choice([opt1, opt2])
         flipper = query.from_user.first_name
         
-        # Log into the JSON system data structure
         history_entry = {
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "user": flipper,
@@ -213,7 +324,6 @@ async def card_flip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         settings["decide_history"].append(history_entry)
         save_json(SETTINGS_FILE, settings)
         
-        # Update UI instantly
         new_text = f"🃏 **Card {chosen_card}** was flipped by {flipper}!\n\n🏆 **Winner:** {winner}"
         await query.edit_message_text(text=new_text, parse_mode="Markdown")
         
@@ -233,13 +343,11 @@ async def get_tally(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("No decisions have been made yet! 🃏")
         return
 
-    # Count how many flips each person initiated
     user_flips = {}
     for entry in history:
         user_name = entry.get("user", "Unknown")
         user_flips[user_name] = user_flips.get(user_name, 0) + 1
 
-    # Format the data display clean and compact
     lines = [
         "📊 **Maine's Decisions** 📊\n",
         f"🔢 **Total Decisions Made:** {total}\n",
@@ -249,7 +357,6 @@ async def get_tally(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for name, count in user_flips.items():
         lines.append(f" └ {name}: {count} flips")
 
-    # Display the last 3 results for added relationship history flavor
     lines.append("\n🕒 **Most Recent Choices:**")
     for entry in history[-3:]:
         lines.append(f" • {entry['opt1']} vs {entry['opt2']} → 🎉 **{entry['winner']}**")
@@ -274,8 +381,8 @@ async def egg_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "you're the hottest girl ever baby😋",
             "i'm so proud of you my love😘",
             "you're my everything🌎",
-            "you make the happiest ever🥰"
-            "you're doing so well baby🏆"
+            "you make the happiest ever🥰",
+            "you're doing so well baby🏆",
             "i'm proud of you forever🥰"
         ]
         await msg.reply_text(random.choice(compliments))
@@ -294,6 +401,13 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("set_tz", set_timezone))
     app.add_handler(CommandHandler("surprise", surprise))
     
+    # Date Night Ideas Handlers
+    app.add_handler(CommandHandler("add_date", add_date_idea))
+    app.add_handler(CommandHandler("date_list", list_date_ideas))
+    app.add_handler(CommandHandler("random_date", random_date_idea))
+    app.add_handler(CommandHandler("done_date", complete_date_idea))
+    app.add_handler(CommandHandler("past_dates", list_completed_dates))
+
     # Arbitrator Handlers
     app.add_handler(CommandHandler("decide", decide))
     app.add_handler(CommandHandler("tally", get_tally))
