@@ -11,6 +11,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, Messa
 # --- Config ---
 MESSAGES_FILE = "daily_messages.json"
 SETTINGS_FILE = "settings.json"
+ADVENT_FILE = "advent_messages.json"
 ADMIN_ID = 435439281
 USER_ID = 649982388
 AUTHORISED_IDS = {ADMIN_ID, USER_ID}
@@ -32,6 +33,7 @@ def save_json(filename, data):
 # Initial Load
 daily_messages = load_json(MESSAGES_FILE)
 settings = load_json(SETTINGS_FILE)
+advent_messages = load_json(ADVENT_FILE)
 
 # Ensure required tracking keys exist in settings
 if "timezones" not in settings:
@@ -446,6 +448,109 @@ async def egg_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "i'm proud of you forever🥰"
         ]
         await msg.reply_text(random.choice(compliments))
+# --- Advent Calendar Feature ---
+
+async def set_advent_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin sets a secret message/surprise for an Advent door (1-25)."""
+    if update.effective_user.id != ADMIN_ID:
+        await update.effective_message.reply_text("Only the Admin can set Advent doors! 🤫")
+        return
+
+    if len(context.args) < 2 or not context.args[0].isdigit():
+        await update.effective_message.reply_text("Usage: /set_advent <day 1-25> <message>")
+        return
+
+    day = int(context.args[0])
+    if not (1 <= day <= 25):
+        await update.effective_message.reply_text("❌ Day must be between 1 and 25!")
+        return
+
+    message = " ".join(context.args[1:])
+    advent_messages[str(day)] = message
+    save_json(ADVENT_FILE, advent_messages)
+    await update.effective_message.reply_text(f"✅ Advent Door {day} saved!")
+
+
+async def show_advent_calendar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Displays the 25-day interactive Christmas Advent grid."""
+    user_id = update.effective_user.id
+    if user_id not in AUTHORISED_IDS: return
+
+    tz_name = user_timezones.get(user_id, "UTC")
+    now = datetime.now(ZoneInfo(tz_name))
+
+    # If it's not December yet, show countdown to Dec 1st
+    if now.month < 12:
+        dec_first = datetime(now.year, 12, 1, tzinfo=ZoneInfo(tz_name))
+        days_left = (dec_first.date() - now.date()).days
+        await update.effective_message.reply_text(
+            f"🎄 **Christmas Advent Calendar** 🎄\n\n⏳ **{days_left} days** until Dec 1st! No peeking yet! 🎅",
+            parse_mode="Markdown"
+        )
+        return
+
+    today = now.day
+    keyboard = []
+    row = []
+
+    for day in range(1, 26):
+        if day > today:
+            label = f"🔒 {day}"
+        elif day == today:
+            label = f"✨ {day}"
+        else:
+            label = f"🎁 {day}"
+
+        row.append(InlineKeyboardButton(label, callback_data=f"advent_{day}"))
+        if len(row) == 5:
+            keyboard.append(row)
+            row = []
+
+    if row:
+        keyboard.append(row)
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.effective_message.reply_text(
+        "🎄 **Christmas Advent Calendar** 🎄\n\n"
+        "✨ = Today's Door | 🎁 = Opened Door | 🔒 = Locked Door\n"
+        "Tap a door to reveal your surprise!",
+        reply_markup=reply_markup,
+        parse_mode="Markdown"
+    )
+
+
+async def advent_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles door button taps."""
+    query = update.callback_query
+    user_id = query.from_user.id
+
+    if user_id not in AUTHORISED_IDS:
+        await query.answer("You are not authorized! ❌", show_alert=True)
+        return
+
+    tz_name = user_timezones.get(user_id, "UTC")
+    now = datetime.now(ZoneInfo(tz_name))
+    today = now.day if now.month == 12 else 0
+
+    day_selected = int(query.data.split("_")[1])
+
+    # Lock enforcement
+    if now.month != 12 or day_selected > today:
+        await query.answer(
+            f"🔒 No peeking! Door {day_selected} stays locked until Dec {day_selected}! 🤫",
+            show_alert=True
+        )
+        return
+
+    door_msg = advent_messages.get(str(day_selected))
+    if door_msg:
+        await query.answer()
+        await query.message.reply_text(
+            f"🎁 **Advent Door {day_selected}** 🎄\n\n{door_msg}",
+            parse_mode="Markdown"
+        )
+    else:
+        await query.answer(f"Door {day_selected} has no message set yet! 🎅", show_alert=True)
 
 # --- Main ---
 if __name__ == "__main__":
@@ -473,6 +578,11 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("decide", decide))
     app.add_handler(CommandHandler("tally", get_tally))
     app.add_handler(CallbackQueryHandler(card_flip_callback, pattern=r"^flip_"))
+    
+    # Advent Calendar Handlers
+    app.add_handler(CommandHandler("advent", show_advent_calendar))
+    app.add_handler(CommandHandler("set_advent", set_advent_message))
+    app.add_handler(CallbackQueryHandler(advent_callback, pattern=r"^advent_\d+$"))
     
     # Free Text Handler
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, egg_handler))
